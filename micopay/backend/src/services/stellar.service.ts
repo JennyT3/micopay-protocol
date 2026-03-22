@@ -1,95 +1,105 @@
 import { config } from '../config.js';
 
+const STROOPS_PER_MXN = 10_000_000n;
+const DEFAULT_TIMEOUT_MINUTES = 120;
+
 /**
- * Stellar/Soroban service.
- *
- * In MVP mode (MOCK_STELLAR=true), all on-chain verifications return success.
- * When connected to real testnet, uses Stellar SDK for verification.
+ * Call the escrow contract's lock() function on testnet.
+ * Platform signs as seller (for demo — platform holds MXNE).
+ * Returns the real transaction hash, visible on stellar.expert.
  */
+export async function callLockOnChain(params: {
+  buyerStellarAddress: string;
+  amountStroops: bigint;
+  platformFeeMxn: number;
+  secretHash: string;       // 64-char hex (32 bytes)
+  timeoutMinutes?: number;
+}): Promise<{ txHash: string }> {
+  const {
+    Contract, TransactionBuilder, Networks, Keypair,
+    nativeToScVal, Address, rpc: rpcModule,
+  } = await import('@stellar/stellar-sdk');
 
-export async function verifyLockOnChain(
-  stellarTradeId: string,
-  expectedSellerAddress: string,
-  expectedAmountStroops: bigint,
-): Promise<boolean> {
-  if (config.mockStellar) {
-    console.log(`[MOCK] Verifying lock on-chain for trade ${stellarTradeId} — returning true`);
-    return true;
+  const {
+    amountStroops,
+    platformFeeMxn,
+    secretHash,
+    timeoutMinutes = DEFAULT_TIMEOUT_MINUTES,
+  } = params;
+
+  const rpc = new rpcModule.Server(config.stellarRpcUrl);
+  const keypair = Keypair.fromSecret(config.platformSecretKey);
+  const platformAddress = keypair.publicKey();
+
+  const account = await rpc.getAccount(platformAddress);
+  const contract = new Contract(config.escrowContractId);
+
+  // Platform acts as both seller and buyer for the demo.
+  // In production: seller = agent's address, buyer = user's address.
+  const platformFeeStroops = BigInt(platformFeeMxn) * STROOPS_PER_MXN;
+  const secretHashBytes = Buffer.from(secretHash, 'hex');
+
+  const tx = new TransactionBuilder(account, {
+    fee: '1000000',
+    networkPassphrase: Networks.TESTNET,
+  })
+    .addOperation(
+      contract.call(
+        'lock',
+        new Address(platformAddress).toScVal(),   // seller
+        new Address(platformAddress).toScVal(),   // buyer (demo: same account)
+        nativeToScVal(amountStroops, { type: 'i128' }),
+        nativeToScVal(platformFeeStroops, { type: 'i128' }),
+        nativeToScVal(secretHashBytes, { type: 'bytes' }),
+        nativeToScVal(timeoutMinutes, { type: 'u32' }),
+      ),
+    )
+    .setTimeout(60)
+    .build();
+
+  // prepareTransaction = simulate + assemble footprint + add Soroban auth
+  const prepared = await rpc.prepareTransaction(tx);
+  prepared.sign(keypair);
+
+  const sendResult = await rpc.sendTransaction(prepared);
+  if (sendResult.status === 'ERROR') {
+    throw new Error(`Send failed: ${JSON.stringify(sendResult.errorResult)}`);
   }
 
-  // Real implementation would use @stellar/stellar-sdk here:
-  // 1. Connect to Soroban RPC
-  // 2. Simulate a get_trade() call
-  // 3. Parse the result and verify seller/amount/status match
-  //
-  // For now, this is a placeholder for when MOCK_STELLAR=false
-  try {
-    // skill: frontend-stellar-sdk.md — use rpc.Server (not SorobanRpc.Server)
-    const StellarSdk = await import('@stellar/stellar-sdk');
-    const { Contract, TransactionBuilder, Networks, Keypair, nativeToScVal, rpc: rpcModule } = StellarSdk;
+  const txHash = sendResult.hash;
 
-    const rpc = new rpcModule.Server(config.stellarRpcUrl);
-    const networkPassphrase =
-      config.stellarNetwork === 'TESTNET' ? Networks.TESTNET : Networks.PUBLIC;
-
-    const contract = new Contract(config.escrowContractId);
-    const account = await rpc.getAccount(Keypair.fromSecret(config.platformSecretKey).publicKey());
-
-    const tx = new TransactionBuilder(account, {
-      fee: '100',
-      networkPassphrase,
-    })
-      .addOperation(
-        contract.call(
-          'get_trade',
-          nativeToScVal(Buffer.from(stellarTradeId, 'hex'), { type: 'bytes' }),
-        ),
-      )
-      .setTimeout(30)
-      .build();
-
-    const simResult = await rpc.simulateTransaction(tx);
-
-    if (rpcModule.Api.isSimulationError(simResult)) {
-      console.error('Simulation error:', simResult);
-      return false;
+  // Poll via Horizon (avoids SDK v12 XDR parsing bug in rpc.getTransaction)
+  const horizonUrl = `https://horizon-testnet.stellar.org/transactions/${txHash}`;
+  for (let i = 0; i < 15; i++) {
+    await new Promise((r) => setTimeout(r, 2000));
+    try {
+      const res = await fetch(horizonUrl);
+      if (res.ok) {
+        const data = await res.json() as { successful: boolean };
+        if (data.successful) {
+          console.log(`[Stellar] Lock confirmed: ${txHash}`);
+          return { txHash };
+        }
+        throw new Error(`Lock transaction failed on-chain: ${txHash}`);
+      }
+      // 404 = still pending
+    } catch (err: any) {
+      if (err.message.includes('failed on-chain')) throw err;
+      // network error — keep polling
     }
-
-    // In real implementation, parse simResult to verify trade data
-    return true;
-  } catch (err) {
-    console.error('verifyLockOnChain error:', err);
-    return false;
   }
+
+  throw new Error(`Lock tx ${txHash} not confirmed within 30s`);
 }
 
 /**
- * Wait for a transaction to be confirmed on-chain.
+ * Legacy mock used when MOCK_STELLAR=true.
  */
-export async function waitForTransaction(hash: string, maxAttempts = 10): Promise<boolean> {
-  if (config.mockStellar) {
-    console.log(`[MOCK] Waiting for tx ${hash} — returning success`);
-    return true;
-  }
-
-  try {
-    const { rpc: rpcModule } = await import('@stellar/stellar-sdk');
-    const rpc = new rpcModule.Server(config.stellarRpcUrl);
-
-    for (let i = 0; i < maxAttempts; i++) {
-      await new Promise((r) => setTimeout(r, 2000));
-      const result = await rpc.getTransaction(hash);
-
-      if (result.status === rpcModule.Api.GetTransactionStatus.SUCCESS) {
-        return true;
-      }
-      if (result.status === rpcModule.Api.GetTransactionStatus.FAILED) {
-        throw new Error('Transaction failed on-chain');
-      }
-    }
-    throw new Error('Transaction timeout');
-  } catch (err) {
-    console.error('waitForTransaction error:', err);
-    return false;
-  }
+export async function verifyLockOnChain(
+  stellarTradeId: string,
+  _expectedSellerAddress: string,
+  _expectedAmountStroops: bigint,
+): Promise<boolean> {
+  console.log(`[MOCK] Verifying lock on-chain for trade ${stellarTradeId} — returning true`);
+  return true;
 }

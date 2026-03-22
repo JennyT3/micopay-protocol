@@ -66,28 +66,11 @@ export async function tradeRoutes(app: FastifyInstance) {
 
   /**
    * POST /trades/:id/lock
-   * Seller notifies that funds are locked on-chain.
+   * Backend calls Soroban contract lock() and returns the tx hash.
    */
-  app.post('/trades/:id/lock', {
-    schema: {
-      body: {
-        type: 'object',
-        required: ['stellar_trade_id', 'lock_tx_hash'],
-        properties: {
-          stellar_trade_id: { type: 'string' },
-          lock_tx_hash: { type: 'string' },
-        },
-        additionalProperties: false,
-      },
-    },
-  }, async (request) => {
+  app.post('/trades/:id/lock', async (request) => {
     const { id } = request.params as { id: string };
-    const { stellar_trade_id, lock_tx_hash } = request.body as {
-      stellar_trade_id: string;
-      lock_tx_hash: string;
-    };
-
-    return tradeService.lockTrade(id, request.user.id, stellar_trade_id, lock_tx_hash);
+    return tradeService.lockTrade(id, request.user.id);
   });
 
   /**

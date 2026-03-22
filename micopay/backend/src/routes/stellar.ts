@@ -29,7 +29,7 @@ export async function stellarRoutes(app: FastifyInstance) {
     const { xdr } = request.body as { xdr: string };
 
     try {
-      const { TransactionBuilder, Networks, SorobanRpc } = await import('@stellar/stellar-sdk');
+      const { TransactionBuilder, Networks, rpc: rpcModule } = await import('@stellar/stellar-sdk');
       const { config } = await import('../config.js');
 
       if (config.mockStellar) {
@@ -42,7 +42,7 @@ export async function stellarRoutes(app: FastifyInstance) {
         config.stellarNetwork === 'TESTNET' ? Networks.TESTNET : Networks.PUBLIC;
 
       const tx = TransactionBuilder.fromXDR(xdr, networkPassphrase);
-      const rpc = new SorobanRpc.Server(config.stellarRpcUrl);
+      const rpc = new rpcModule.Server(config.stellarRpcUrl);
       const result = await rpc.sendTransaction(tx);
 
       return { hash: result.hash, status: result.status };

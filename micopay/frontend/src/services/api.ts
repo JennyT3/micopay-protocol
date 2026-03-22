@@ -50,14 +50,12 @@ export async function createTrade(
 }
 
 export async function lockTrade(tradeId: string, sellerToken: string): Promise<{ lock_tx_hash: string }> {
-  const stellar_trade_id = `mock_${Date.now()}`;
-  const lock_tx_hash = `tx_${Date.now()}`;
-  await http.post(
+  const res = await http.post(
     `/trades/${tradeId}/lock`,
-    { stellar_trade_id, lock_tx_hash },
+    {},
     authHeaders(sellerToken),
   );
-  return { lock_tx_hash };
+  return { lock_tx_hash: res.data.lock_tx_hash };
 }
 
 export async function revealTrade(tradeId: string, sellerToken: string): Promise<void> {

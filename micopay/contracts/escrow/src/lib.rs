@@ -20,11 +20,10 @@ fn compute_trade_id(
     _buyer: &Address,
     secret_hash: &BytesN<32>,
 ) -> BytesN<32> {
-    let mut seed = Bytes::new(env);
-    // Combine secret_hash and ledger sequence for uniqueness
-    seed.append(&Bytes::from_slice(env, &secret_hash.to_array()));
-    let seq = env.ledger().sequence();
-    seed.append(&Bytes::from_slice(env, &seq.to_be_bytes()));
+    // Deterministic: only use secret_hash (no ledger sequence).
+    // This ensures simulation and real execution produce the same footprint key.
+    // secret_hash = sha256(random_secret), so this = sha256(sha256(secret)) = unique.
+    let seed = Bytes::from_slice(env, &secret_hash.to_array());
     env.crypto().sha256(&seed).into()
 }
 

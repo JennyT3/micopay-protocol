@@ -1,6 +1,7 @@
 import db from '../db/schema.js';
+import { config } from '../config.js';
 import { generateTradeSecret, encryptSecret, decryptSecret } from './secret.service.js';
-import { verifyLockOnChain } from './stellar.service.js';
+import { callLockOnChain, verifyLockOnChain } from './stellar.service.js';
 import { NotFoundError, ForbiddenError, ConflictError, BadRequestError } from '../utils/errors.js';
 
 // --- Trade lifecycle ---
@@ -91,23 +92,39 @@ export async function getActiveTrades(userId: string) {
 export async function lockTrade(
   tradeId: string,
   userId: string,
-  stellarTradeId: string,
-  lockTxHash: string,
 ) {
   const trade = await db.getOne('SELECT * FROM trades WHERE id = $1', [tradeId]);
   if (!trade) throw new NotFoundError('Trade not found');
   if (trade.seller_id !== userId) throw new ForbiddenError('Only the seller can lock');
   if (trade.status !== 'pending') throw new ConflictError(`Trade is ${trade.status}, expected pending`);
 
-  // Verify on-chain (mock in MVP)
-  const verified = await verifyLockOnChain(
-    stellarTradeId,
-    trade.seller_id, // In real impl, would use stellar_address
-    BigInt(trade.amount_stroops),
-  );
+  // Fetch buyer's Stellar address
+  const buyer = await db.getOne('SELECT stellar_address FROM users WHERE id = $1', [trade.buyer_id]);
+  if (!buyer) throw new NotFoundError('Buyer not found');
 
-  if (!verified) {
-    throw new BadRequestError('Could not verify lock on-chain');
+  let lockTxHash: string;
+  let stellarTradeId: string;
+
+  if (!config.mockStellar) {
+    // Real on-chain lock via Soroban
+    const result = await callLockOnChain({
+      buyerStellarAddress: buyer.stellar_address,
+      amountStroops: BigInt(trade.amount_stroops),
+      platformFeeMxn: trade.platform_fee_mxn,
+      secretHash: trade.secret_hash,
+    });
+    lockTxHash = result.txHash;
+    stellarTradeId = result.txHash;
+  } else {
+    // Mock mode — generate placeholder hashes
+    const verified = await verifyLockOnChain(
+      `mock_${Date.now()}`,
+      trade.seller_id,
+      BigInt(trade.amount_stroops),
+    );
+    if (!verified) throw new BadRequestError('Could not verify lock on-chain');
+    lockTxHash = `mock_${Date.now()}`;
+    stellarTradeId = lockTxHash;
   }
 
   await db.execute(
@@ -120,7 +137,7 @@ export async function lockTrade(
     [tradeId, stellarTradeId, lockTxHash],
   );
 
-  return { status: 'locked' };
+  return { status: 'locked', lock_tx_hash: lockTxHash };
 }
 
 export async function revealTrade(tradeId: string, userId: string) {
