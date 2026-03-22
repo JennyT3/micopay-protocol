@@ -1,0 +1,146 @@
+import type { FastifyInstance } from 'fastify';
+import { authMiddleware } from '../middleware/auth.middleware.js';
+import * as tradeService from '../services/trade.service.js';
+
+export async function tradeRoutes(app: FastifyInstance) {
+  // All trade routes require authentication
+  app.addHook('preHandler', authMiddleware);
+
+  /**
+   * POST /trades
+   * Buyer creates a new trade. Generates HTLC secret and returns secret_hash.
+   */
+  app.post('/trades', {
+    schema: {
+      body: {
+        type: 'object',
+        required: ['seller_id', 'amount_mxn'],
+        properties: {
+          seller_id: { type: 'string', format: 'uuid' },
+          amount_mxn: { type: 'integer', minimum: 100, maximum: 50000 },
+        },
+        additionalProperties: false,
+      },
+    },
+  }, async (request, reply) => {
+    const { seller_id, amount_mxn } = request.body as { seller_id: string; amount_mxn: number };
+    const buyerId = request.user.id;
+
+    const trade = await tradeService.createTrade({
+      sellerId: seller_id,
+      buyerId,
+      amountMxn: amount_mxn,
+    });
+
+    // Don't expose encrypted secret fields in response
+    const { secret_enc, secret_nonce, ...safeTrade } = trade;
+
+    reply.status(201);
+    return { trade: safeTrade };
+  });
+
+  /**
+   * GET /trades/active
+   * List active trades for the authenticated user.
+   */
+  app.get('/trades/active', async (request) => {
+    const trades = await tradeService.getActiveTrades(request.user.id);
+
+    // Strip secret fields
+    const safeTrades = trades.map(({ secret_enc, secret_nonce, ...t }: any) => t);
+
+    return { trades: safeTrades };
+  });
+
+  /**
+   * GET /trades/:id
+   * Get trade detail (only for participants).
+   */
+  app.get('/trades/:id', async (request) => {
+    const { id } = request.params as { id: string };
+    const trade = await tradeService.getTradeById(id, request.user.id);
+
+    const { secret_enc, secret_nonce, ...safeTrade } = trade;
+    return { trade: safeTrade };
+  });
+
+  /**
+   * POST /trades/:id/lock
+   * Seller notifies that funds are locked on-chain.
+   */
+  app.post('/trades/:id/lock', {
+    schema: {
+      body: {
+        type: 'object',
+        required: ['stellar_trade_id', 'lock_tx_hash'],
+        properties: {
+          stellar_trade_id: { type: 'string' },
+          lock_tx_hash: { type: 'string' },
+        },
+        additionalProperties: false,
+      },
+    },
+  }, async (request) => {
+    const { id } = request.params as { id: string };
+    const { stellar_trade_id, lock_tx_hash } = request.body as {
+      stellar_trade_id: string;
+      lock_tx_hash: string;
+    };
+
+    return tradeService.lockTrade(id, request.user.id, stellar_trade_id, lock_tx_hash);
+  });
+
+  /**
+   * POST /trades/:id/reveal
+   * Seller confirms cash was received. Enables secret access.
+   */
+  app.post('/trades/:id/reveal', async (request) => {
+    const { id } = request.params as { id: string };
+    return tradeService.revealTrade(id, request.user.id);
+  });
+
+  /**
+   * GET /trades/:id/secret
+   * Seller gets the HTLC secret to show QR to buyer.
+   * Only available in 'revealing' state.
+   */
+  app.get('/trades/:id/secret', async (request) => {
+    const { id } = request.params as { id: string };
+    return tradeService.getTradeSecret(
+      id,
+      request.user.id,
+      request.ip,
+      request.headers['user-agent'] || 'unknown',
+    );
+  });
+
+  /**
+   * POST /trades/:id/complete
+   * Buyer confirms release happened on-chain.
+   */
+  app.post('/trades/:id/complete', {
+    schema: {
+      body: {
+        type: 'object',
+        required: ['release_tx_hash'],
+        properties: {
+          release_tx_hash: { type: 'string' },
+        },
+        additionalProperties: false,
+      },
+    },
+  }, async (request) => {
+    const { id } = request.params as { id: string };
+    const { release_tx_hash } = request.body as { release_tx_hash: string };
+    return tradeService.completeTrade(id, request.user.id, release_tx_hash);
+  });
+
+  /**
+   * POST /trades/:id/cancel
+   * Either party cancels (only before lock).
+   */
+  app.post('/trades/:id/cancel', async (request) => {
+    const { id } = request.params as { id: string };
+    return tradeService.cancelTrade(id, request.user.id);
+  });
+}
