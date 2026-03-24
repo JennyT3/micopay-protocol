@@ -22,8 +22,11 @@ const app = Fastify({
 
 // --- Plugins ---
 
-// CORS — allow frontend dev server
-app.register(fastifyCors, { origin: true });
+// CORS — Allow all origins for the hackathon deployment
+app.register(fastifyCors, { 
+  origin: '*',
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS']
+});
 
 // JWT
 app.register(fastifyJwt, {
