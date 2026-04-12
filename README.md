@@ -81,13 +81,17 @@ Every action costs a small x402 micropayment — this is what keeps the feed sig
 
 ### Why it matters
 
-Today the Bazaar coordinates Stellar ↔ Stellar swaps in the demo. The architecture is designed so that once `AtomicSwapHTLC` goes live on ETH/BTC/SOL, any agent on any chain can broadcast an intent and get matched to a MicoPay provider — walking their user to physical MXN cash in Mexico without ever touching a CEX or a bridge.
+> **Demo scope**: The Bazaar today coordinates Stellar ↔ Stellar swaps. True cross-chain (ETH/BTC/SOL) requires an off-chain watcher that reads the published secret from Soroban and claims the counterpart chain — that relayer is the next milestone after the AtomicSwapHTLC contract (37 tests, deployed).
+
+The architecture is designed so that once the relayer is live, any agent on any chain can broadcast an intent and get matched to a MicoPay provider — walking their user to physical MXN cash in Mexico without ever touching a CEX or a bridge.
 
 ---
 
 ## 📱 MicoPay Mobile App
 
 The mobile app (`micopay/frontend`, port 5181) is the user-facing side of the same protocol. It shares the same Soroban contracts and merchant network as the agent API.
+
+> **Demo scope**: The live demo runs against 4 simulated testnet providers. The P2P matching engine and open provider registration are the next implementation milestone (see roadmap).
 
 ### Cash In / Cash Out (P2P)
 Anyone with MXN cash can join as a liquidity provider — neighbors, street vendors, small shops, anyone. They set their rate and availability; the app matches them with nearby users.
