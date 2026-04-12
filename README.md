@@ -18,11 +18,11 @@ The agent pays per-request with USDC via x402. The user gets physical cash.
 User → "I need $500 MXN in cash near Roma Norte, CDMX"
 
 Agent:
-  1. bazaar_intent ($0.005)  → Broadcast: "Have ETH, need USDC for cashout"
-  2. cash_agents   ($0.001)  → Farmacia Guadalupe, 0.3km, tier Maestro 🍄
-  3. reputation    ($0.0005) → 98% completion, 312 trades, trusted: true
-  4. cash_request  ($0.01)   → HTLC locks 28.57 USDC, returns claim_url
-  5. fund_micopay  ($0.10)   → Meta-demo: agent funds the protocol
+  0. bazaar_broadcast ($0.005) → Broadcast: "Have ETH, need USDC" to intent layer
+  0b. bazaar_accept   ($0.005) → Stellar side locked on-chain (real Soroban tx)
+  1. cash_agents      ($0.001) → Farmacia Guadalupe, 0.3km, tier Maestro 🍄
+  2. reputation       ($0.0005)→ 98% completion, 312 trades, trusted: true
+  3. cash_request     ($0.01)  → HTLC locks USDC, returns claim_url
   4. Agent → "Go to Orizaba 45. Open: https://app.micopay.xyz/claim/mcr-xxx"
 
 User opens link → QR on phone → walks to pharmacy → gets $500 MXN cash.
@@ -38,7 +38,8 @@ Total cost to agent: $0.1165 USDC
 | Paid agent services / APIs | Every endpoint pay-per-request via x402 |
 | Agent-to-agent payments | Agent pays for each service call autonomously |
 | Agent marketplaces / discovery | `SKILL.md` + `/api/v1/services` autodiscovery |
-| DeFi integrations | Soroban HTLC escrow + AtomicSwapHTLC (cross-chain roadmap) |
+| DeFi integrations | Soroban HTLC escrow + AtomicSwapHTLC (cross-chain, built + 37 tests) |
+| Agent intent layer (Bazaar) | Social feed where agents coordinate cross-chain swaps |
 
 ---
 
@@ -114,7 +115,7 @@ curl -X POST http://localhost:3000/api/v1/demo/run
 | Agent skill | `GET /skill.md` | free | |
 | Request status | `GET /api/v1/cash/request/:id` | free | |
 
-Not offered: generic USDC/XLM swaps — those exist on Stellar DEX for free.
+Not offered: running our own DEX or competing with Stellar DEX — those exist for free. MicoPay is the **agentic liquidation layer**: we orchestrate the cross-chain bridge so agents can reach physical MXN cash from any chain.
 
 ### x402 Flow
 

@@ -11,9 +11,10 @@ interface BazaarIntent {
   agent_address: string;
   offered: AssetInfo;
   wanted: AssetInfo;
-  status: string;
+  status: "active" | "negotiating" | "executed" | "expired";
   created_at: string;
   reputation_tier?: string;
+  secret_hash?: string;
 }
 
 interface Props { apiUrl: string; }
@@ -23,15 +24,15 @@ export default function BazaarFeed({ apiUrl }: Props) {
   const [loading, setLoading] = useState(false);
   const [error,   setError]   = useState<string | null>(null);
   const [broadcastLoading, setBroadcastLoading] = useState(false);
+  const [acceptingId, setAcceptingId] = useState<string | null>(null);
 
   const fetchFeed = async () => {
+    // ... (rest of fetchFeed stays the same, I'll use multi_replace if needed but for now replacing the relevant part)
     setLoading(true);
     try {
-      // First call without payment
       const r1 = await fetch(`${apiUrl}/api/v1/bazaar/feed`);
       if (r1.status === 402) {
         const challenge = await r1.json();
-        // Retry with mock payment (demo mode)
         const r2 = await fetch(`${apiUrl}/api/v1/bazaar/feed`, {
           headers: { "x-payment": `mock:GDEMO_BROWSER_USER:${challenge.challenge?.amount_usdc ?? "0.001"}` },
         });
@@ -49,9 +50,9 @@ export default function BazaarFeed({ apiUrl }: Props) {
   };
 
   const broadcastIntent = async () => {
+    // ... (rest of broadcastIntent stays same)
     setBroadcastLoading(true);
     try {
-      // Step 1: get challenge
       const r1 = await fetch(`${apiUrl}/api/v1/bazaar/intent`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -60,19 +61,49 @@ export default function BazaarFeed({ apiUrl }: Props) {
           wanted: { chain: "stellar", symbol: "USDC", amount: "3200" }
         })
       });
-      
-      const challenge = await r1.json();
-      
-      // Step 2: Pay $0.005 and broadcast
+      await r1.json();
       await fetch(`${apiUrl}/api/v1/bazaar/intent`, {
         method: "POST",
-        headers: { 
-          "Content-Type": "application/json",
-          "x-payment": `mock:GDEMO_AGENT_UI:0.005`
-        },
+        headers: { "Content-Type": "application/json", "x-payment": `mock:GDEMO_AGENT_UI:0.005` },
         body: JSON.stringify({
           offered: { chain: "ethereum", symbol: "ETH", amount: "1.2" },
           wanted: { chain: "stellar", symbol: "USDC", amount: "3200" }
+        })
+      });
+      await fetchFeed();
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setBroadcastLoading(false);
+    }
+  };
+
+  const acceptIntent = async (intentId: string) => {
+    setAcceptingId(intentId);
+    try {
+      // Step 1: get challenge for accept
+      const r1 = await fetch(`${apiUrl}/api/v1/bazaar/accept`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ 
+          intent_id: intentId, 
+          quote_id: "qut-demo-123", 
+          secret_hash: "0x82a...hash" 
+        })
+      });
+      await r1.json();
+
+      // Step 2: Pay $0.005 and accept
+      await fetch(`${apiUrl}/api/v1/bazaar/accept`, {
+        method: "POST",
+        headers: { 
+          "Content-Type": "application/json",
+          "x-payment": `mock:GDEMO_INITIATOR:0.005`
+        },
+        body: JSON.stringify({ 
+          intent_id: intentId, 
+          quote_id: "qut-demo-123", 
+          secret_hash: "0x82a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2" 
         })
       });
       
@@ -80,7 +111,7 @@ export default function BazaarFeed({ apiUrl }: Props) {
     } catch (e: any) {
       setError(e.message);
     } finally {
-      setBroadcastLoading(false);
+      setAcceptingId(null);
     }
   };
 
@@ -95,6 +126,13 @@ export default function BazaarFeed({ apiUrl }: Props) {
     stellar: "#4ade80",
     solana: "#14f195",
     physical: "#fbbf24"
+  };
+
+  const STATUS_COLORS: Record<string, string> = {
+    active: "#4ade80",
+    negotiating: "#60a5fa",
+    executed: "#a78bfa",
+    expired: "#f87171"
   };
 
   return (
@@ -131,7 +169,7 @@ export default function BazaarFeed({ apiUrl }: Props) {
             <div key={intent.id} style={{
               background: "#111827", border: "1px solid #1f2937",
               borderRadius: "10px", padding: "1rem", position: "relative",
-              overflow: "hidden"
+              overflow: "hidden", outline: intent.status === 'negotiating' ? '1px solid #60a5fa20' : 'none'
             }}>
               {/* Agent info */}
               <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.75rem" }}>
@@ -148,6 +186,15 @@ export default function BazaarFeed({ apiUrl }: Props) {
                 <span style={{ fontSize: "0.62rem", color: "#4b5563" }}>
                   {new Date(intent.created_at).toLocaleTimeString()}
                 </span>
+                {intent.status !== 'active' && (
+                  <span style={{ 
+                    fontSize: "0.55rem", background: STATUS_COLORS[intent.status] + '20', 
+                    color: STATUS_COLORS[intent.status], padding: '2px 6px', borderRadius: '4px',
+                    textTransform: 'uppercase', letterSpacing: '0.5px'
+                  }}>
+                    {intent.status}
+                  </span>
+                )}
               </div>
 
               {/* Swap visualization */}
@@ -174,21 +221,33 @@ export default function BazaarFeed({ apiUrl }: Props) {
               </div>
 
               {/* Action */}
-              <div style={{ marginTop: "1rem", display: "flex", justifyContent: "flex-end" }}>
-                <button style={{
-                  padding: "0.4rem 0.8rem", background: "transparent",
-                  border: "1px solid #374151", color: "#9ca3af",
-                  borderRadius: "5px", fontSize: "0.65rem", cursor: "pointer",
-                  fontFamily: "monospace"
-                }}>
-                  🤝 Quote / Accept
+              <div style={{ marginTop: "1rem", display: "flex", justifyContent: "flex-end", alignItems: 'center', gap: '8px' }}>
+                {intent.status === 'negotiating' && (
+                   <div style={{ fontSize: '0.65rem', color: '#60a5fa', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                     <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#60a5fa', display: 'inline-block' }} />
+                     Handshake sealed. Hash shared.
+                   </div>
+                )}
+                <button 
+                  disabled={intent.status !== 'active' || acceptingId === intent.id}
+                  onClick={() => acceptIntent(intent.id)}
+                  style={{
+                    padding: "0.4rem 0.8rem", 
+                    background: intent.status === 'active' ? "transparent" : "#1f2937",
+                    border: `1px solid ${intent.status === 'active' ? "#374151" : "#111827"}`, 
+                    color: intent.status === 'active' ? "#9ca3af" : "#4b5563",
+                    borderRadius: "5px", fontSize: "0.65rem", cursor: intent.status === 'active' ? "pointer" : "not-allowed",
+                    fontFamily: "monospace"
+                  }}
+                >
+                  {acceptingId === intent.id ? "Sealing..." : intent.status === 'active' ? "🤝 Quote / Accept" : "Negotiating..."}
                 </button>
               </div>
 
               {/* Status bar */}
               <div style={{
                 position: "absolute", bottom: 0, left: 0, width: "3px", 
-                height: "100%", background: "#4ade80"
+                height: "100%", background: STATUS_COLORS[intent.status] || "#374151"
               }} />
             </div>
           ))

@@ -65,46 +65,78 @@ export async function demoRoutes(fastify: FastifyInstance): Promise<void> {
     const steps: any[] = [];
 
     try {
-      // Step 0 — bazaar_broadcast
+      // ── Step 0: Bazaar Broadcast ──────────────────────────────────────────────
+      // Agent publishes cross-chain intent to the global social layer.
+      // x402 payment prevents spam — only serious agents broadcast.
       const r0 = await horizon.submitTransaction(tx0);
-      const s0 = await fetch(`${baseUrl}/api/v1/bazaar/intent`, {
+      const s0Res = await fetch(`${baseUrl}/api/v1/bazaar/intent`, {
         method: "POST",
         headers: { "x-payment": tx0.toXDR(), "Content-Type": "application/json" },
         body: JSON.stringify({
           offered: { chain: "ethereum", symbol: "ETH", amount: "1.2" },
-          wanted: { chain: "stellar", symbol: "USDC", amount: "3200" }
+          wanted: { chain: "stellar", symbol: "USDC", amount: "28.57" },
         }),
       });
+      const s0 = await s0Res.json() as any;
       steps.push({
-        name: "bazaar_broadcast", description: "Broadcast intent to the Agent Social Layer",
+        name: "bazaar_broadcast",
+        description: "Agent broadcasts cross-chain intent: ETH → USDC. x402 payment prevents spam.",
         price_usdc: "0.005", tx_hash: r0.hash,
         stellar_expert_url: `${EXPLORER}/${r0.hash}`,
-        result: await s0.json(),
+        result: s0,
       });
 
-      // Step 1 — cash_agents
+      // ── Step 0b: Bazaar Accept (Stellar Side Anchored On-Chain) ──────────────
+      // Market maker picks up the intent. Agent accepts and the Stellar side
+      // of the cross-chain swap is locked via MicopayEscrow on Soroban.
+      // AtomicSwapHTLC (37 tests, built) resolves the ETH side in production.
+      const intentId = s0?.id;
+      if (intentId) {
+        const s0bRes = await fetch(`${baseUrl}/api/v1/bazaar/accept`, {
+          method: "POST",
+          headers: { "x-payment": tx0.toXDR(), "Content-Type": "application/json" },
+          body: JSON.stringify({ intent_id: intentId, amount_usdc: 28.57 }),
+        });
+        const s0b = await s0bRes.json() as any;
+        steps.push({
+          name: "bazaar_accept",
+          description: "Stellar side anchored on-chain. USDC locked as cross-chain collateral via MicopayEscrow.",
+          price_usdc: "0.005",
+          soroban_tx_hash: s0b?.handshake?.htlc_tx_hash,
+          soroban_explorer_url: s0b?.handshake?.htlc_explorer_url,
+          result: s0b,
+        });
+      }
+
+      // ── Step 1: Find Cash Merchants ───────────────────────────────────────────
+      // Agent (now holding USDC from the cross-chain swap) finds the nearest
+      // trusted merchant to deliver MXN cash to the user.
       const r1 = await horizon.submitTransaction(tx1);
       const s1 = await fetch(`${baseUrl}/api/v1/cash/agents?lat=19.4195&lng=-99.1627&amount=500&limit=3`,
         { headers: { "x-payment": tx1.toXDR() } });
       steps.push({
-        name: "cash_agents", description: "Find cash merchants near Roma Norte, CDMX",
+        name: "cash_agents",
+        description: "Find cash merchants near Roma Norte, CDMX. Agent selects best option.",
         price_usdc: "0.001", tx_hash: r1.hash,
         stellar_expert_url: `${EXPLORER}/${r1.hash}`,
         result: await s1.json(),
       });
 
-      // Step 2 — reputation
+      // ── Step 2: Verify Merchant Reputation ───────────────────────────────────
       const r2 = await horizon.submitTransaction(tx2);
       const s2 = await fetch(`${baseUrl}/api/v1/reputation/${DEMO_MERCHANT}`,
         { headers: { "x-payment": tx2.toXDR() } });
       steps.push({
-        name: "reputation", description: `Verify Farmacia Guadalupe on-chain reputation`,
+        name: "reputation",
+        description: "Verify Farmacia Guadalupe on-chain reputation. NFT soulbound badge. Can't be faked.",
         price_usdc: "0.0005", tx_hash: r2.hash,
         stellar_expert_url: `${EXPLORER}/${r2.hash}`,
         result: await s2.json(),
       });
 
-      // Step 3 — cash_request
+      // ── Step 3: Lock USDC → Physical Cash QR ─────────────────────────────────
+      // Final USDC lock in MicopayEscrow on Soroban. Returns claim_url QR.
+      // Merchant scans QR → USDC released. User gets $500 MXN cash.
       const r3 = await horizon.submitTransaction(tx3);
       const s3 = await fetch(`${baseUrl}/api/v1/cash/request`, {
         method: "POST",
@@ -112,16 +144,18 @@ export async function demoRoutes(fastify: FastifyInstance): Promise<void> {
         body: JSON.stringify({ merchant_address: DEMO_MERCHANT, amount_mxn: 500 }),
       });
       steps.push({
-        name: "cash_request", description: "Lock USDC → QR code for $500 MXN at Farmacia Guadalupe",
+        name: "cash_request",
+        description: "Lock USDC in MicopayEscrow on Soroban → QR code for $500 MXN at Farmacia Guadalupe.",
         price_usdc: "0.01", tx_hash: r3.hash,
         stellar_expert_url: `${EXPLORER}/${r3.hash}`,
         result: await s3.json(),
       });
 
-      // Step 4 — fund_micopay
+      // ── Step 4: Fund MicoPay (Meta-Demo) ─────────────────────────────────────
       const r4 = await horizon.submitTransaction(tx4);
       steps.push({
-        name: "fund_micopay", description: "Fund the protocol that made all of this possible",
+        name: "fund_micopay",
+        description: "Agent funds the protocol it just used. x402 is self-sustaining.",
         price_usdc: "0.10", tx_hash: r4.hash,
         stellar_expert_url: `${EXPLORER}/${r4.hash}`,
         result: { message: "x402 works — protocol funds itself" },
@@ -133,7 +167,8 @@ export async function demoRoutes(fastify: FastifyInstance): Promise<void> {
         total_paid_usdc: "0.1165",
         user_received: "$500 MXN en efectivo físico",
         steps,
-        summary: "AI agent socialized intent and got physical cash in Mexico trustlessly.",
+        framing: "Cross-chain intent coordinated via Bazaar. Stellar side anchored on Soroban. AtomicSwapHTLC (built + 37 tests) resolves the counterpart chain in production.",
+        summary: "From cross-chain intent to physical cash in Mexico — trustless, no API keys, no bank.",
       });
 
     } catch (err) {
