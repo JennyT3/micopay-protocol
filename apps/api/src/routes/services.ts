@@ -76,6 +76,15 @@ export async function serviceRoutes(fastify: FastifyInstance): Promise<void> {
           why_pay: "Enables private negotiation channels between agents. Guaranteed delivery of cotizations to the target agent.",
         },
         {
+          name: "bazaar_reputation",
+          endpoint: "GET /api/v1/bazaar/reputation/:address",
+          method: "GET",
+          price_usdc: "0",
+          description: "Lookup an AI agent's reputation score derived from Bazaar swap history. Returns tier (Maestro/Experto/Activo/Espora), completion rate, and trust signal.",
+          example_request: { address: "GCEZWKCA5VLDNRLN3RPRJMRZOX3Z6G5CHCGKUJI5KOOJ9TXWNTBBS2JN" },
+          why_pay: "Free — use it to filter the intent feed and only respond to trustworthy agents.",
+        },
+        {
           name: "fund_micopay",
           endpoint: "POST /api/v1/fund",
           method: "POST",
