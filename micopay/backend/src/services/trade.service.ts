@@ -2,6 +2,7 @@ import db from '../db/schema.js';
 import { config } from '../config.js';
 import { generateTradeSecret, encryptSecret, decryptSecret } from './secret.service.js';
 import { createHash } from 'crypto';
+import type { FastifyRequest } from 'fastify';
 import { callLockOnChain, callReleaseOnChain, verifyLockOnChain } from './stellar.service.js';
 import { NotFoundError, ForbiddenError, ConflictError, BadRequestError } from '../utils/errors.js';
 
@@ -12,13 +13,15 @@ const PLATFORM_FEE_PERCENT = 0.8; // 0.8% platform fee
 const DEFAULT_TIMEOUT_MINUTES = 120; // 2 hours
 
 export interface CreateTradeInput {
+  request: FastifyRequest;
   sellerId: string;
   buyerId: string;
   amountMxn: number;
 }
 
 export async function createTrade(input: CreateTradeInput) {
-  const { sellerId, buyerId, amountMxn } = input;
+  const { request, sellerId, buyerId, amountMxn } = input;
+  request.log.info({ seller_id: sellerId, buyer_id: buyerId, amount_mxn: amountMxn, category: 'trade.lifecycle' }, '[trade] Creating trade');
 
   if (amountMxn < 100 || amountMxn > 50000) {
     throw new BadRequestError('amount_mxn must be between 100 and 50,000');
@@ -103,9 +106,11 @@ export async function getTradeHistory(userId: string) {
 }
 
 export async function lockTrade(
+  request: FastifyRequest,
   tradeId: string,
   userId: string,
 ) {
+  request.log.info({ trade_id: tradeId, user_id: userId, category: 'trade.lifecycle' }, '[trade] Locking trade');
   const trade = await db.getOne('SELECT * FROM trades WHERE id = $1', [tradeId]);
   if (!trade) throw new NotFoundError('Trade not found');
   if (trade.seller_id !== userId) throw new ForbiddenError('Only the seller can lock');
@@ -121,6 +126,7 @@ export async function lockTrade(
   if (!config.mockStellar) {
     // Real on-chain lock via Soroban
     const result = await callLockOnChain({
+      request,
       buyerStellarAddress: buyer.stellar_address,
       amountStroops: BigInt(trade.amount_stroops),
       platformFeeMxn: trade.platform_fee_mxn,
@@ -131,6 +137,7 @@ export async function lockTrade(
   } else {
     // Mock mode — generate placeholder hashes
     const verified = await verifyLockOnChain(
+      request,
       `mock_${Date.now()}`,
       trade.seller_id,
       BigInt(trade.amount_stroops),
@@ -153,7 +160,8 @@ export async function lockTrade(
   return { status: 'locked', lock_tx_hash: lockTxHash };
 }
 
-export async function revealTrade(tradeId: string, userId: string) {
+export async function revealTrade(request: FastifyRequest, tradeId: string, userId: string) {
+  request.log.info({ trade_id: tradeId, user_id: userId, category: 'trade.lifecycle' }, '[trade] Revealing trade');
   const trade = await db.getOne('SELECT * FROM trades WHERE id = $1', [tradeId]);
   if (!trade) throw new NotFoundError('Trade not found');
   if (trade.seller_id !== userId) throw new ForbiddenError('Only the seller can reveal');
@@ -169,7 +177,8 @@ export async function revealTrade(tradeId: string, userId: string) {
   return { status: 'revealing' };
 }
 
-export async function getTradeSecret(tradeId: string, userId: string, ip: string, userAgent: string) {
+export async function getTradeSecret(request: FastifyRequest, tradeId: string, userId: string, ip: string, userAgent: string) {
+  request.log.info({ trade_id: tradeId, user_id: userId, category: 'trade.lifecycle' }, '[trade] Secret accessed');
   const trade = await db.getOne('SELECT * FROM trades WHERE id = $1', [tradeId]);
   if (!trade) throw new NotFoundError('Trade not found');
 
@@ -203,7 +212,8 @@ export async function getTradeSecret(tradeId: string, userId: string, ip: string
   return { secret, qr_payload: qrPayload, expires_in: 120 };
 }
 
-export async function completeTrade(tradeId: string, userId: string) {
+export async function completeTrade(request: FastifyRequest, tradeId: string, userId: string) {
+  request.log.info({ trade_id: tradeId, user_id: userId, category: 'trade.lifecycle' }, '[trade] Completing trade');
   const trade = await db.getOne('SELECT * FROM trades WHERE id = $1', [tradeId]);
   if (!trade) throw new NotFoundError('Trade not found');
   if (trade.buyer_id !== userId) throw new ForbiddenError('Only the buyer can complete');
@@ -222,7 +232,7 @@ export async function completeTrade(tradeId: string, userId: string) {
     const tradeIdBytes = createHash('sha256').update(secretHashBytes).digest();
     const secretBytes = Buffer.from(secret, 'hex');
 
-    const result = await callReleaseOnChain({ tradeIdBytes, secretBytes });
+    const result = await callReleaseOnChain({ request, tradeIdBytes, secretBytes });
     releaseTxHash = result.txHash;
   } else {
     releaseTxHash = `mock_release_${Date.now()}`;
@@ -243,7 +253,8 @@ export async function completeTrade(tradeId: string, userId: string) {
   return { status: 'completed', release_tx_hash: releaseTxHash };
 }
 
-export async function cancelTrade(tradeId: string, userId: string) {
+export async function cancelTrade(request: FastifyRequest, tradeId: string, userId: string) {
+  request.log.info({ trade_id: tradeId, user_id: userId, category: 'trade.lifecycle' }, '[trade] Cancelling trade');
   const trade = await db.getOne('SELECT * FROM trades WHERE id = $1', [tradeId]);
   if (!trade) throw new NotFoundError('Trade not found');
 

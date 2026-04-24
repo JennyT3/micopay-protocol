@@ -181,9 +181,11 @@ async function initPg() {
     await p.query('SELECT 1');
     pgPool = p;
     pgAvailable = true;
+    // module-level init — no Fastify logger available yet
     console.log('✅ PostgreSQL connected');
   } catch {
     pgAvailable = false;
+    // module-level init — no Fastify logger available yet
     console.warn('⚠️  PostgreSQL unavailable — using in-memory store (data resets on restart)');
   }
 }
