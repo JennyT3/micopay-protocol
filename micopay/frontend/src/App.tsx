@@ -17,10 +17,14 @@ import Explore from './pages/Explore'
 import CETESScreen from './pages/CETESScreen'
 import BlendScreen from './pages/BlendScreen'
 import BottomNav from './components/BottomNav'
+<<<<<<< HEAD
 import TradeConfirmation from './components/TradeConfirmation'
 import TradeDetail, { type GeneralCancelOutcome, type TradeDetailLoadedTrade } from './pages/TradeDetail'
 import TradeCancelled from './pages/TradeCancelled'
 import { extractApiErrorPayload } from './utils/apiError'
+=======
+import ErrorBoundary from './components/ErrorBoundary'
+>>>>>>> 2b349f8 (feat: #15 Support contact entry points from trade detail and error states)
 import { registerUser, createTrade, lockTrade, revealTrade, UserData, TradeData } from './services/api'
 
 interface AppProps {
@@ -200,12 +204,18 @@ function App() {
   };
 
   return (
+<<<<<<< HEAD
     <div className="flex flex-col min-h-screen bg-[#F4FAFF]">
       <div className="fixed top-0 w-full z-50">
         <ConnectionBanner isVisible={isDegraded} />
       </div>
 
       {currentPage === "home" && (
+=======
+    <ErrorBoundary>
+      <div className="flex flex-col min-h-screen bg-[#F4FAFF]">
+      {currentPage === 'home' && (
+>>>>>>> 2b349f8 (feat: #15 Support contact entry points from trade detail and error states)
         <Home onNavigateCashout={startCashout} onNavigateDeposit={startDeposit} token={buyerUser?.token ?? null} />
       )}
       {currentPage === "history" && (
@@ -253,8 +263,14 @@ function App() {
       {!["chat", "chat_deposit", "qr_reveal", "qr_deposit", "success", "cetes", "blend"].includes(currentPage) && (
         <BottomNav currentPage={currentPage} onNavigate={handleNavigate} />
       )}
+<<<<<<< HEAD
     </div>
   );
+=======
+      </div>
+    </ErrorBoundary>
+  )
+>>>>>>> 2b349f8 (feat: #15 Support contact entry points from trade detail and error states)
 }
 
 export default App;
