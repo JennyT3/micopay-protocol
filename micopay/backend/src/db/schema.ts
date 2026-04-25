@@ -9,6 +9,7 @@ const mem: Record<string, any[]> = {
   wallets: [],
   trades: [],
   secret_access_log: [],
+  audit_log: [],
 };
 
 function memNow() { return new Date().toISOString(); }
