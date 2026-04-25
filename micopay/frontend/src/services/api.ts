@@ -91,6 +91,19 @@ export async function getTradeHistory(token: string): Promise<TradeHistoryItem[]
   return res.data.trades;
 }
 
+export interface MerchantTradeItem {
+  id: string;
+  buyer_handle: string;
+  amount_mxn: number;
+  status: string;
+  created_at: string;
+}
+
+export async function getMerchantTrades(token: string, state: string = 'all'): Promise<MerchantTradeItem[]> {
+  const res = await http.get('/merchants/me/trades', { ...authHeaders(token), params: { state } });
+  return res.data.trades;
+}
+
 export async function getAccountBalance(): Promise<{ xlm: string; address: string }> {
   const res = await http.get('/account/balance');
   return res.data;

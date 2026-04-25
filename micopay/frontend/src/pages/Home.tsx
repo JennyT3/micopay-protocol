@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Logo } from '../components/Logo';
-import { getTradeHistory, getAccountBalance, TradeHistoryItem } from '../services/api';
+import { getTradeHistory, getAccountBalance, TradeHistoryItem, getMerchantTrades, MerchantTradeItem } from '../services/api';
 
 const EXPLORER = 'https://stellar.expert/explorer/testnet/tx';
 
@@ -17,10 +17,13 @@ interface HomeProps {
   onNavigateCashout: () => void;
   onNavigateDeposit: () => void;
   token: string | null;
+  merchantToken?: string | null;
+  onNavigateInbox?: () => void;
 }
 
-const Home = ({ onNavigateCashout, onNavigateDeposit, token }: HomeProps) => {
+const Home = ({ onNavigateCashout, onNavigateDeposit, token, merchantToken, onNavigateInbox }: HomeProps) => {
   const [trades, setTrades] = useState<TradeHistoryItem[]>([]);
+  const [merchantTrades, setMerchantTrades] = useState<MerchantTradeItem[]>([]);
   const [xlmBalance, setXlmBalance] = useState<string | null>(null);
   const [stellarAddress, setStellarAddress] = useState<string>('');
 
@@ -40,6 +43,13 @@ const Home = ({ onNavigateCashout, onNavigateDeposit, token }: HomeProps) => {
       .catch(() => {});
   }, [token]);
 
+  useEffect(() => {
+    if (!merchantToken) return;
+    getMerchantTrades(merchantToken, 'pending')
+      .then(setMerchantTrades)
+      .catch(() => {});
+  }, [merchantToken]);
+
   // Convert XLM to approx MXN (1 XLM ≈ 20 MXN, demo rate)
   const mxnBalance = xlmBalance
     ? (parseFloat(xlmBalance.replace(/,/g, '')) * 20).toLocaleString('es-MX', { maximumFractionDigits: 2 })
@@ -53,9 +63,16 @@ const Home = ({ onNavigateCashout, onNavigateDeposit, token }: HomeProps) => {
       <header className="fixed top-0 left-0 w-full z-50 flex justify-between items-center px-6 py-4 backdrop-blur-md bg-white/90">
         <Logo />
         <div className="flex items-center gap-4">
-          <span className="material-symbols-outlined text-primary p-2 rounded-full hover:bg-surface-container-low transition-colors cursor-pointer">
-            notifications
-          </span>
+          <div className="relative">
+            <span className="material-symbols-outlined text-primary p-2 rounded-full hover:bg-surface-container-low transition-colors cursor-pointer">
+              notifications
+            </span>
+            {merchantTrades.length > 0 && (
+              <div className="absolute top-0 right-0 bg-error text-white text-xs font-bold w-5 h-5 rounded-full flex items-center justify-center">
+                {merchantTrades.length}
+              </div>
+            )}
+          </div>
           <div className="w-10 h-10 rounded-full border-2 border-primary-container bg-surface-container-low flex items-center justify-center">
             <svg fill="none" height="20" viewBox="0 0 24 24" width="20" xmlns="http://www.w3.org/2000/svg">
               <circle cx="7" cy="7" r="3" stroke="#1A2830" strokeWidth="2"/>

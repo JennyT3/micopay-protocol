@@ -12,6 +12,7 @@ import SuccessScreen from './pages/SuccessScreen'
 import Explore from './pages/Explore'
 import CETESScreen from './pages/CETESScreen'
 import BlendScreen from './pages/BlendScreen'
+import MerchantInbox from './pages/MerchantInbox'
 import BottomNav from './components/BottomNav'
 import ErrorBoundary from './components/ErrorBoundary'
 import { registerUser, createTrade, lockTrade, revealTrade, UserData, TradeData } from './services/api'
@@ -120,7 +121,13 @@ function App() {
     <ErrorBoundary>
       <div className="flex flex-col min-h-screen bg-[#F4FAFF]">
       {currentPage === 'home' && (
-        <Home onNavigateCashout={startCashout} onNavigateDeposit={startDeposit} token={buyerUser?.token ?? null} />
+        <Home
+          onNavigateCashout={startCashout}
+          onNavigateDeposit={startDeposit}
+          token={buyerUser?.token ?? null}
+          merchantToken={sellerUser?.token ?? null}
+          onNavigateInbox={() => setCurrentPage('inbox')}
+        />
       )}
 
       {/* Cashout Flow */}
@@ -247,8 +254,16 @@ function App() {
         />
       )}
 
-      {!['chat', 'chat_deposit', 'qr_reveal', 'qr_deposit', 'success', 'cetes', 'blend'].includes(currentPage) && (
-        <BottomNav currentPage={currentPage} onNavigate={handleNavigate} />
+      {currentPage === 'inbox' && (
+        <MerchantInbox
+          onBack={() => setCurrentPage('home')}
+          onSelectTrade={(tradeId) => setCurrentPage('chat')}
+          token={sellerUser?.token ?? null}
+        />
+      )}
+
+      {!['chat', 'chat_deposit', 'qr_reveal', 'qr_deposit', 'success', 'cetes', 'blend', 'inbox'].includes(currentPage) && (
+        <BottomNav currentPage={currentPage} onNavigate={handleNavigate} isMerchant={!!sellerUser} />
       )}
       </div>
     </ErrorBoundary>
