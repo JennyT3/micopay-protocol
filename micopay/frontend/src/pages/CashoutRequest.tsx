@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import TradeStateBadge, { getTradeStateDebugOverride, TradeState } from '../components/TradeStateBadge';
 
 interface CashoutRequestProps {
     onBack: () => void;
@@ -7,6 +8,7 @@ interface CashoutRequestProps {
 
 const CashoutRequest = ({ onBack, onSearch }: CashoutRequestProps) => {
     const [amount, setAmount] = useState('500');
+    const state: TradeState = getTradeStateDebugOverride('pending_cash');
 
     return (
         <div className="text-on-surface antialiased overflow-x-hidden min-h-screen bg-surface-container-low">
@@ -32,6 +34,12 @@ const CashoutRequest = ({ onBack, onSearch }: CashoutRequestProps) => {
             {/* Main Content Canvas */}
             <main className="pt-24 pb-32 px-6 flex flex-col min-h-screen max-w-md mx-auto">
                 {/* Section: Input Header */}
+                <TradeStateBadge
+                    state={state}
+                    onRecover={() => onSearch(Number(amount) || 500)}
+                    recoverLabel="Buscar una nueva oferta"
+                    className="mb-6"
+                />
                 <div className="mt-8 mb-4">
                     <label className="font-label text-xs font-bold tracking-[0.15em] text-on-surface-variant opacity-70">
                         ¿CUÁNTO QUIERES EN EFECTIVO?

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import { getSecret, completeTrade, TradeData } from '../services/api';
+import TradeStateBadge, { getTradeStateDebugOverride, normalizeTradeState, TradeState } from '../components/TradeStateBadge';
 
 interface QRRevealProps {
     activeTrade: TradeData | null;
@@ -16,6 +17,7 @@ const QRReveal = ({ activeTrade, sellerToken, buyerToken, amount, onBack, onChat
     const [isConfirming, setIsConfirming] = useState(false);
     const [qrPayload, setQrPayload] = useState<string>('MICOPAY:DEMO:mock_secret_for_ui_preview');
     const [secretLoaded, setSecretLoaded] = useState(false);
+    const [tradeState, setTradeState] = useState<TradeState>('locked');
 
     // Fetch real HTLC secret from backend
     useEffect(() => {
@@ -32,14 +34,22 @@ const QRReveal = ({ activeTrade, sellerToken, buyerToken, amount, onBack, onChat
             });
     }, [activeTrade, sellerToken]);
 
+    useEffect(() => {
+        const fallbackState: TradeState = secretLoaded ? 'revealed' : 'locked';
+        const backendState = normalizeTradeState(activeTrade?.status, fallbackState);
+        setTradeState(getTradeStateDebugOverride(backendState));
+    }, [activeTrade?.status, secretLoaded]);
+
     const completePurchase = async () => {
         if (isConfirming) return;
         setIsConfirming(true);
+        setTradeState('pending_cash');
         try {
             if (activeTrade && buyerToken) {
                 await completeTrade(activeTrade.id, buyerToken);
                 console.log('✅ Trade completed on-chain');
             }
+            setTradeState('completed');
         } catch (e) {
             console.warn('Could not complete trade on backend, proceeding as demo', e);
         } finally {
@@ -70,12 +80,11 @@ const QRReveal = ({ activeTrade, sellerToken, buyerToken, amount, onBack, onChat
             <main className="pt-24 pb-12 px-6 max-w-md mx-auto">
                 {/* Status Banner */}
                 <div className="mb-8">
-                    <div className="inline-flex items-center gap-2 bg-primary-container/10 border border-primary-container/20 px-4 py-2 rounded-full">
-                        <span className="material-symbols-outlined text-primary text-sm" style={{ fontVariationSettings: '"FILL" 1' }}>check_circle</span>
-                        <span className="text-primary font-semibold text-sm">
-                            {secretLoaded ? '✓ Escrow on-chain · Fondos bloqueados' : '✓ Oferta aceptada · Saldo bloqueado'}
-                        </span>
-                    </div>
+                    <TradeStateBadge
+                        state={tradeState}
+                        onRecover={onBack}
+                        recoverLabel="Volver y crear una nueva operación"
+                    />
                 </div>
 
                 {/* Chat Preview Section */}
