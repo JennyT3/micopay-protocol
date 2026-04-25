@@ -10,6 +10,7 @@ import QRReveal from './pages/QRReveal'
 import DepositQR from './pages/DepositQR'
 import SuccessScreen from './pages/SuccessScreen'
 import Explore from './pages/Explore'
+import History from './pages/History'
 import CETESScreen from './pages/CETESScreen'
 import BlendScreen from './pages/BlendScreen'
 import BottomNav from './components/BottomNav'
@@ -70,10 +71,8 @@ function App() {
   }
 
   // Called when user selects an offer on the map
-  // Creates trade, simulates agent locking + revealing, then navigates to chat
   const handleOfferSelected = async (offerId: string) => {
     if (!buyerUser || !sellerUser) {
-      // Backend unavailable — go straight to chat (UI-only demo)
       setCurrentPage('chat')
       return
     }
@@ -93,7 +92,7 @@ function App() {
     }
   }
 
-  // Deposit flow: buyer selects offer → create + lock trade → navigate to deposit chat
+  // Deposit flow
   const handleDepositOfferSelected = async (offerId: string) => {
     if (!buyerUser || !sellerUser) {
       setCurrentPage('chat_deposit')
@@ -119,6 +118,10 @@ function App() {
     <div className="flex flex-col min-h-screen bg-[#F4FAFF]">
       {currentPage === 'home' && (
         <Home onNavigateCashout={startCashout} onNavigateDeposit={startDeposit} token={buyerUser?.token ?? null} />
+      )}
+
+      {currentPage === 'history' && (
+        <History token={buyerUser?.token ?? null} onStartCashout={startCashout} />
       )}
 
       {/* Cashout Flow */}
@@ -164,9 +167,7 @@ function App() {
         <ChatRoom
           lockTxHash={lockTxHash}
           onBack={() => setCurrentPage('map')}
-          onViewQR={() => {
-            setCurrentPage('qr_reveal')
-          }}
+          onViewQR={() => setCurrentPage('qr_reveal')}
         />
       )}
 
@@ -174,9 +175,7 @@ function App() {
         <DepositChat
           lockTxHash={lockTxHash}
           onBack={() => setCurrentPage('map_deposit')}
-          onViewQR={() => {
-            setCurrentPage('qr_deposit')
-          }}
+          onViewQR={() => setCurrentPage('qr_deposit')}
         />
       )}
 
@@ -188,9 +187,7 @@ function App() {
           amount={activeAmount}
           onBack={() => setCurrentPage('chat')}
           onChat={() => setCurrentPage('chat')}
-          onSuccess={() => {
-            setCurrentPage('success')
-          }}
+          onSuccess={() => setCurrentPage('success')}
         />
       )}
 
@@ -198,9 +195,7 @@ function App() {
         <DepositQR
           onBack={() => setCurrentPage('chat_deposit')}
           onChat={() => setCurrentPage('chat_deposit')}
-          onSuccess={() => {
-            setCurrentPage('success')
-          }}
+          onSuccess={() => setCurrentPage('success')}
         />
       )}
 

@@ -40,7 +40,6 @@ const Home = ({ onNavigateCashout, onNavigateDeposit, token }: HomeProps) => {
       .catch(() => {});
   }, [token]);
 
-  // Convert XLM to approx MXN (1 XLM ≈ 20 MXN, demo rate)
   const mxnBalance = xlmBalance
     ? (parseFloat(xlmBalance.replace(/,/g, '')) * 20).toLocaleString('es-MX', { maximumFractionDigits: 2 })
     : '—';
@@ -146,9 +145,23 @@ const Home = ({ onNavigateCashout, onNavigateDeposit, token }: HomeProps) => {
           <h2 className="text-[11px] font-bold text-outline-variant uppercase tracking-[0.15em] mb-4">Actividad reciente</h2>
 
           {trades.length === 0 ? (
-            <div className="bg-white rounded-[20px] border border-outline-variant/10 shadow-sm p-6 text-center">
-              <span className="material-symbols-outlined text-outline-variant text-3xl mb-2 block">receipt_long</span>
-              <p className="text-sm text-outline font-medium">Sin transacciones aún</p>
+            <div className="bg-white rounded-[20px] border border-outline-variant/10 shadow-sm px-6 py-10 flex flex-col items-center text-center gap-3">
+              <div className="w-14 h-14 rounded-full bg-primary/8 flex items-center justify-center mb-1">
+                <span className="material-symbols-outlined text-primary text-3xl">receipt_long</span>
+              </div>
+              <h3 className="font-headline font-bold text-base text-on-surface">
+                Todavía no hay movimientos
+              </h3>
+              <p className="text-sm text-outline leading-snug max-w-[260px]">
+                Cada intercambio que completes aparecerá aquí con su estado y comprobante en cadena.
+              </p>
+              <button
+                onClick={onNavigateCashout}
+                className="mt-2 h-[44px] px-6 bg-primary text-white text-sm font-bold rounded-xl active:scale-95 transition-all duration-200 flex items-center gap-2 shadow-sm shadow-primary/20"
+              >
+                <span className="material-symbols-outlined text-sm">payments</span>
+                Hacer mi primer intercambio
+              </button>
             </div>
           ) : (
             <div className="bg-white rounded-[20px] border border-outline-variant/10 shadow-sm divide-y divide-outline-variant/10">
