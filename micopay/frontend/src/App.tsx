@@ -12,6 +12,7 @@ import SuccessScreen from "./pages/SuccessScreen";
 import Explore from "./pages/Explore";
 import CETESScreen from "./pages/CETESScreen";
 import BlendScreen from "./pages/BlendScreen";
+import MerchantInbox from "./pages/MerchantInbox";
 import Profile from "./pages/Profile";
 import BottomNav from "./components/BottomNav";
 import {
@@ -156,6 +157,15 @@ function App() {
           onNavigateCashout={startCashout}
           onNavigateDeposit={startDeposit}
           token={buyerUser?.token ?? null}
+          merchantToken={sellerUser?.token ?? null}
+          onNavigateInbox={() => setCurrentPage("inbox")}
+        />
+      )}
+
+      {currentPage === "inbox" && (
+        <MerchantInbox
+          token={sellerUser?.token ?? null}
+          onBack={() => setCurrentPage("home")}
         />
       )}
 
@@ -309,7 +319,11 @@ function App() {
         "cetes",
         "blend",
       ].includes(currentPage) && (
-        <BottomNav currentPage={currentPage} onNavigate={handleNavigate} />
+        <BottomNav
+          currentPage={currentPage}
+          onNavigate={handleNavigate}
+          isMerchant={!!sellerUser}
+        />
       )}
     </div>
   );

@@ -17,12 +17,15 @@ interface HomeProps {
   onNavigateCashout: () => void;
   onNavigateDeposit: () => void;
   token: string | null;
+  merchantToken: string | null;
+  onNavigateInbox: () => void;
 }
 
-const Home = ({ onNavigateCashout, onNavigateDeposit, token }: HomeProps) => {
+const Home = ({ onNavigateCashout, onNavigateDeposit, token, merchantToken, onNavigateInbox }: HomeProps) => {
   const [trades, setTrades] = useState<TradeHistoryItem[]>([]);
   const [xlmBalance, setXlmBalance] = useState<string | null>(null);
   const [stellarAddress, setStellarAddress] = useState<string>('');
+  const [pendingCount, setPendingCount] = useState(0);
 
   useEffect(() => {
     getAccountBalance()
@@ -40,6 +43,16 @@ const Home = ({ onNavigateCashout, onNavigateDeposit, token }: HomeProps) => {
       .catch(() => {});
   }, [token]);
 
+  useEffect(() => {
+    if (!merchantToken) return;
+    fetch(`/api/merchants/me/trades?state=pending`, {
+      headers: { Authorization: `Bearer ${merchantToken}` },
+    })
+      .then(res => res.json())
+      .then(data => setPendingCount(data.trades?.length || 0))
+      .catch(() => {});
+  }, [merchantToken]);
+
   // Convert XLM to approx MXN (1 XLM ≈ 20 MXN, demo rate)
   const mxnBalance = xlmBalance
     ? (parseFloat(xlmBalance.replace(/,/g, '')) * 20).toLocaleString('es-MX', { maximumFractionDigits: 2 })
@@ -53,9 +66,16 @@ const Home = ({ onNavigateCashout, onNavigateDeposit, token }: HomeProps) => {
       <header className="fixed top-0 left-0 w-full z-50 flex justify-between items-center px-6 py-4 backdrop-blur-md bg-white/90">
         <Logo />
         <div className="flex items-center gap-4">
-          <span aria-hidden="true" className="material-symbols-outlined text-primary p-2 rounded-full hover:bg-surface-container-low transition-colors cursor-pointer">
-            notifications
-          </span>
+          <button onClick={onNavigateInbox} className="relative p-2 rounded-full hover:bg-surface-container-low transition-colors">
+            <span aria-hidden="true" className="material-symbols-outlined text-primary">
+              notifications
+            </span>
+            {pendingCount > 0 && (
+              <span className="absolute -top-1 -right-1 bg-error text-white text-[10px] font-bold w-5 h-5 rounded-full flex items-center justify-center">
+                {pendingCount}
+              </span>
+            )}
+          </button>
           <div className="w-10 h-10 rounded-full border-2 border-primary-container bg-surface-container-low flex items-center justify-center">
             <svg fill="none" height="20" viewBox="0 0 24 24" width="20" xmlns="http://www.w3.org/2000/svg">
               <circle cx="7" cy="7" r="3" stroke="#1A2830" strokeWidth="2"/>
