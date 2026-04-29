@@ -3,7 +3,18 @@ import db from "../db/schema.js";
 import { config } from "../config.js";
 import { authMiddleware } from "../middleware/auth.middleware.js";
 import { deleteAccount } from "../services/account.service.js";
+import { createRateLimiter } from '../middleware/rateLimit.middleware.js';
 import { ConflictError } from "../utils/errors.js";
+
+const authRateLimit = createRateLimiter({
+  windowMs: config.authRateLimitWindowMs,
+  max: config.authRateLimitMax,
+});
+
+const authRateLimit = createRateLimiter({
+  windowMs: config.authRateLimitWindowMs,
+  max: config.authRateLimitMax,
+});
 
 export async function userRoutes(app: FastifyInstance) {
   /**
@@ -13,6 +24,7 @@ export async function userRoutes(app: FastifyInstance) {
   app.post(
     "/users/register",
     {
+      preHandler: [authRateLimit],
       schema: {
         body: {
           type: "object",
@@ -69,6 +81,7 @@ export async function userRoutes(app: FastifyInstance) {
         { expiresIn: config.jwtExpiry },
       );
 
+      request.log.info({ user_id: user.id, stellar_address, category: 'auth' }, '[auth] User registered');
       reply.status(201);
       return { user, token };
     },
@@ -94,6 +107,7 @@ export async function userRoutes(app: FastifyInstance) {
         [userId],
       );
 
+      request.log.info({ user_id: userId, category: 'auth' }, '[auth] Profile fetched');
       return { user };
     },
   );

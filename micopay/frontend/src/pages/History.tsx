@@ -1,144 +1,157 @@
 import { useState, useEffect } from 'react';
 import { getTradeHistory, TradeHistoryItem } from '../services/api';
 
-const EXPLORER = 'https://stellar.expert/explorer/testnet/tx';
-
-const STATUS_LABEL: Record<string, { label: string; color: string }> = {
-  completed: { label: 'Completado', color: 'text-[#1D9E75]' },
-  locked:    { label: 'Bloqueado',  color: 'text-primary' },
-  revealing: { label: 'Revelando',  color: 'text-primary' },
-  pending:   { label: 'Pendiente',  color: 'text-outline' },
-  cancelled: { label: 'Cancelado',  color: 'text-error' },
-  refunded:  { label: 'Reembolsado',color: 'text-outline' },
+const STATUS_LABEL: Record<string, { label: string; color: string; bg: string }> = {
+  completed: { label: 'Completado', color: 'text-[#1D9E75]', bg: 'bg-[#1D9E75]/10' },
+  locked:    { label: 'Bloqueado',  color: 'text-primary',   bg: 'bg-primary/10' },
+  revealing: { label: 'Revelando',  color: 'text-primary',   bg: 'bg-primary/10' },
+  pending:   { label: 'Pendiente',  color: 'text-outline',   bg: 'bg-outline/10' },
+  cancelled: { label: 'Cancelado',  color: 'text-error',     bg: 'bg-error/10' },
+  expired:   { label: 'Expirado',   color: 'text-outline',   bg: 'bg-outline/10' },
 };
 
 interface HistoryProps {
+  onBack: () => void;
+  onSelectTrade: (trade: TradeHistoryItem) => void;
   token: string | null;
-  onStartCashout: () => void;
 }
 
-const History = ({ token, onStartCashout }: HistoryProps) => {
+const FILTERS = [
+  { id: 'all', label: 'Todos' },
+  { id: 'completed', label: 'Completados' },
+  { id: 'cancelled', label: 'Cancelados' },
+  { id: 'expired', label: 'Expirados' },
+];
+
+const History = ({ onBack, onSelectTrade, token }: HistoryProps) => {
   const [trades, setTrades] = useState<TradeHistoryItem[]>([]);
+  const [status, setStatus] = useState('all');
+  const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!token) {
-      setLoading(false);
-      return;
-    }
-    getTradeHistory(token)
+    if (!token) return;
+    setLoading(true);
+    getTradeHistory(token, status, page, 10)
       .then(setTrades)
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [token]);
+  }, [token, status, page]);
+
+  const handleFilterChange = (newStatus: string) => {
+    setStatus(newStatus);
+    setPage(1);
+  };
 
   return (
     <div className="bg-surface text-on-surface font-body min-h-screen flex flex-col">
-      {/* Header */}
-      <header className="fixed top-0 left-0 w-full z-50 flex items-center px-6 py-4 backdrop-blur-md bg-white/90 border-b border-outline-variant/10">
-        <h1 className="font-headline font-bold text-xl text-on-surface tracking-tight">Historial</h1>
+      <header className="fixed top-0 left-0 w-full z-50 flex items-center px-4 py-4 bg-white/90 backdrop-blur-md border-b border-outline-variant/10">
+        <button onClick={onBack} className="p-2 hover:bg-surface-container-low rounded-full transition-colors">
+          <span className="material-symbols-outlined text-on-surface">arrow_back</span>
+        </button>
+        <h1 className="flex-1 text-center font-headline font-bold text-lg mr-10">Historial de Transacciones</h1>
       </header>
 
-      <main className="flex-1 mt-20 px-6 pb-32 pt-4">
-        <p className="text-[11px] font-bold text-outline-variant uppercase tracking-[0.15em] mb-6">
-          Todos tus intercambios
-        </p>
+      <main className="flex-1 mt-20 px-6 pb-24">
+        {/* Status Filters */}
+        <section className="flex gap-2 overflow-x-auto pb-4 no-scrollbar mb-4">
+          {FILTERS.map((f) => (
+            <button
+              key={f.id}
+              onClick={() => handleFilterChange(f.id)}
+              className={`px-4 py-2 rounded-full text-xs font-bold whitespace-nowrap transition-all ${
+                status === f.id
+                  ? 'bg-primary text-white shadow-md'
+                  : 'bg-white border border-outline-variant/20 text-outline hover:border-primary/50'
+              }`}
+            >
+              {f.label}
+            </button>
+          ))}
+        </section>
 
+        {/* Trade List */}
         {loading ? (
-          /* Loading skeletons */
-          <div className="space-y-3">
-            {[1, 2, 3].map((n) => (
-              <div
-                key={n}
-                className="bg-white rounded-[20px] border border-outline-variant/10 p-4 animate-pulse"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-full bg-surface-container-high flex-shrink-0" />
-                  <div className="flex-1 space-y-2">
-                    <div className="h-3 bg-surface-container-high rounded-full w-1/3" />
-                    <div className="h-2.5 bg-surface-container-high rounded-full w-1/4" />
-                  </div>
-                  <div className="h-2.5 bg-surface-container-high rounded-full w-16" />
-                </div>
-              </div>
-            ))}
+          <div className="flex flex-col items-center justify-center py-20 opacity-50">
+            <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin mb-4"></div>
+            <p className="text-sm font-medium">Cargando historial...</p>
           </div>
         ) : trades.length === 0 ? (
-          /* ── Empty state ── */
-          <div className="flex flex-col items-center text-center py-16 px-4 gap-4">
-            <div className="w-16 h-16 rounded-full bg-primary/8 flex items-center justify-center">
-              <span className="material-symbols-outlined text-primary text-3xl">history</span>
+          <div className="bg-white rounded-[24px] border border-outline-variant/10 shadow-sm p-12 text-center mt-10">
+            <div className="w-16 h-16 bg-surface-container-low rounded-full flex items-center justify-center mx-auto mb-4">
+              <span className="material-symbols-outlined text-outline text-3xl">history_toggle_off</span>
             </div>
-            <h2 className="font-headline font-bold text-xl text-on-surface">
-              Sin intercambios aún
-            </h2>
-            <p className="text-sm text-outline leading-snug max-w-[272px]">
-              Cada operación que completes quedará registrada aquí con su estado y comprobante en cadena.
+            <h3 className="font-headline font-bold text-on-surface mb-2">Sin transacciones</h3>
+            <p className="text-sm text-outline leading-relaxed max-w-[200px] mx-auto">
+              No encontramos transacciones que coincidan con tu filtro actual.
             </p>
-            <button
-              onClick={onStartCashout}
-              className="mt-2 h-[48px] px-8 bg-primary text-white font-bold rounded-xl active:scale-95 transition-all duration-200 flex items-center gap-2 shadow-sm shadow-primary/20"
-            >
-              <span className="material-symbols-outlined text-sm">payments</span>
-              Hacer mi primer intercambio
-            </button>
           </div>
         ) : (
-          /* Trade list */
-          <div className="bg-white rounded-[20px] border border-outline-variant/10 shadow-sm divide-y divide-outline-variant/10">
+          <div className="flex flex-col gap-3">
             {trades.map((trade) => {
-              const s = STATUS_LABEL[trade.status] ?? { label: trade.status, color: 'text-outline' };
-              const date = new Date(trade.created_at).toLocaleString('es-MX', {
-                day: 'numeric',
-                month: 'short',
-                hour: '2-digit',
-                minute: '2-digit',
+              const s = STATUS_LABEL[trade.status] || STATUS_LABEL.pending;
+              const isCashIn = trade.direction === 'cash-in';
+              const date = new Date(trade.created_at).toLocaleDateString('es-MX', {
+                day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit'
               });
+
               return (
-                <div key={trade.id} className="p-4">
-                  <div className="flex items-start justify-between gap-2 mb-2">
-                    <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
-                        <span className="material-symbols-outlined text-primary text-base">swap_horiz</span>
-                      </div>
-                      <div>
-                        <p className="font-bold text-on-surface text-sm">
+                <div
+                  key={trade.id}
+                  onClick={() => onSelectTrade(trade)}
+                  className="bg-white rounded-[20px] p-4 border border-outline-variant/10 shadow-sm hover:shadow-md transition-all active:scale-[0.98] cursor-pointer"
+                >
+                  <div className="flex items-center gap-4">
+                    <div className={`w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0 ${isCashIn ? 'bg-[#1D9E75]/10' : 'bg-primary/10'}`}>
+                      <span className={`material-symbols-outlined ${isCashIn ? 'text-[#1D9E75]' : 'text-primary'}`}>
+                        {isCashIn ? 'south_west' : 'north_east'}
+                      </span>
+                    </div>
+                    
+                    <div className="flex-1 min-w-0">
+                      <div className="flex justify-between items-start mb-1">
+                        <p className="font-bold text-on-surface text-sm truncate">
+                          {trade.merchant_username}
+                        </p>
+                        <p className="font-black text-on-surface text-sm">
                           ${trade.amount_mxn.toLocaleString('es-MX')} MXN
                         </p>
-                        <p className="text-[11px] text-outline">{date}</p>
+                      </div>
+                      
+                      <div className="flex justify-between items-center">
+                        <p className="text-[11px] text-outline font-medium uppercase tracking-wider">{date}</p>
+                        <span className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-widest ${s.color} ${s.bg}`}>
+                          {s.label}
+                        </span>
                       </div>
                     </div>
-                    <span className={`text-[11px] font-bold ${s.color}`}>{s.label}</span>
-                  </div>
-
-                  {/* TX links */}
-                  <div className="flex flex-col gap-1 pl-12">
-                    {trade.lock_tx_hash && !trade.lock_tx_hash.startsWith('mock') && (
-                      <a
-                        href={`${EXPLORER}/${trade.lock_tx_hash}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-[11px] text-primary font-mono flex items-center gap-1 hover:underline"
-                      >
-                        <span className="material-symbols-outlined text-[12px]">lock</span>
-                        lock · {trade.lock_tx_hash.substring(0, 14)}…
-                      </a>
-                    )}
-                    {trade.release_tx_hash && !trade.release_tx_hash.startsWith('mock') && (
-                      <a
-                        href={`${EXPLORER}/${trade.release_tx_hash}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-[11px] text-[#1D9E75] font-mono flex items-center gap-1 hover:underline"
-                      >
-                        <span className="material-symbols-outlined text-[12px]">lock_open</span>
-                        release · {trade.release_tx_hash.substring(0, 14)}…
-                      </a>
-                    )}
                   </div>
                 </div>
               );
             })}
+          </div>
+        )}
+
+        {/* Pagination */}
+        {!loading && trades.length > 0 && (
+          <div className="flex items-center justify-between mt-8">
+            <button
+              disabled={page === 1}
+              onClick={() => setPage(p => Math.max(1, p - 1))}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl border border-outline-variant/20 text-sm font-bold disabled:opacity-30 disabled:pointer-events-none hover:bg-surface-container-low transition-colors"
+            >
+              <span className="material-symbols-outlined text-sm">chevron_left</span>
+              Anterior
+            </button>
+            <span className="text-xs font-bold text-outline">Página {page}</span>
+            <button
+              disabled={trades.length < 10}
+              onClick={() => setPage(p => p + 1)}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl border border-outline-variant/20 text-sm font-bold disabled:opacity-30 disabled:pointer-events-none hover:bg-surface-container-low transition-colors"
+            >
+              Siguiente
+              <span className="material-symbols-outlined text-sm">chevron_right</span>
+            </button>
           </div>
         )}
       </main>

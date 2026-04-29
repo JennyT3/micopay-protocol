@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import TradeStateBadge, { getTradeStateDebugOverride, TradeState } from '../components/TradeStateBadge';
 
 interface DepositRequestProps {
     onBack: () => void;
@@ -7,6 +8,7 @@ interface DepositRequestProps {
 
 const DepositRequest = ({ onBack, onSearch }: DepositRequestProps) => {
     const [amount, setAmount] = useState('500');
+    const state: TradeState = getTradeStateDebugOverride('pending_cash');
 
     return (
         <div className="bg-[#f4faff] min-h-screen text-on-surface font-body">
@@ -31,6 +33,11 @@ const DepositRequest = ({ onBack, onSearch }: DepositRequestProps) => {
 
             <main className="max-w-md mx-auto px-6 pt-12 pb-24">
                 <div className="flex flex-col space-y-8">
+                    <TradeStateBadge
+                        state={state}
+                        onRecover={() => onSearch(amount || '500')}
+                        recoverLabel="Buscar nueva opción"
+                    />
                     {/* Amount Input Section */}
                     <div className="space-y-6">
                         <label htmlFor="deposit-amount" className="font-medium text-[10px] tracking-wide uppercase text-on-surface-variant/70">

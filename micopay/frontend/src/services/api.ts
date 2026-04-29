@@ -59,6 +59,14 @@ export async function createTrade(
   return res.data.trade;
 }
 
+export async function getTrade(
+  tradeId: string,
+  token: string,
+): Promise<TradeData> {
+  const res = await http.get(`/trades/${tradeId}`, authHeaders(token));
+  return res.data.trade;
+}
+
 export async function lockTrade(
   tradeId: string,
   sellerToken: string,
@@ -108,6 +116,7 @@ export interface TradeHistoryItem {
   lock_tx_hash: string | null;
   release_tx_hash: string | null;
   created_at: string;
+  completed_at: string | null;
   seller_id: string;
   buyer_id: string;
 }
@@ -246,4 +255,38 @@ export async function blendBorrow(
 ): Promise<BlendTxResult> {
   const res = await http.post("/defi/blend/borrow", { amount, asset });
   return res.data;
+}
+
+
+export interface MerchantConfig {
+  rate_percent: number;
+  min_trade_mxn: number;
+  max_trade_mxn: number;
+  daily_cap_mxn: number;
+}
+
+export interface UserProfile {
+  id: string;
+  username: string;
+  stellar_address: string;
+  wallet_type?: string;
+  rate_percent?: number;
+  min_trade_mxn?: number;
+  max_trade_mxn?: number;
+  daily_cap_mxn?: number;
+}
+
+export async function getMyProfile(token: string): Promise<UserProfile> {
+  const res = await http.get('/users/me', authHeaders(token));
+  return res.data.user;
+}
+
+export async function getMerchantConfig(token: string): Promise<MerchantConfig> {
+  const res = await http.get('/merchants/me/config', authHeaders(token));
+  return res.data.config;
+}
+
+export async function updateMerchantConfig(token: string, config: MerchantConfig): Promise<MerchantConfig> {
+  const res = await http.put('/merchants/me/config', config, authHeaders(token));
+  return res.data.config;
 }

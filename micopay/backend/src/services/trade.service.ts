@@ -2,7 +2,8 @@ import db from '../db/schema.js';
 import { config } from '../config.js';
 import { generateTradeSecret, encryptSecret, decryptSecret } from './secret.service.js';
 import { createHash } from 'crypto';
-import { callLockOnChain, callReleaseOnChain, verifyLockOnChain } from './stellar.service.js';
+import type { FastifyRequest } from 'fastify';
+import { callLockOnChain, callReleaseOnChain, verifyLockOnChain, assertNotReplayed } from './stellar.service.js';
 import { NotFoundError, ForbiddenError, ConflictError, BadRequestError } from '../utils/errors.js';
 import {
   getTradeAuditTrail as getTradeAuditTrailRows,
@@ -56,14 +57,71 @@ async function logTransitionFailure(context: TransitionFailureContext, error: un
   }
 }
 
+const DAILY_CAP_RESET_NOTE = 'Daily cap usage resets at 00:00 UTC.';
+
+function getUtcDayRange(date = new Date()) {
+  const start = new Date(Date.UTC(
+    date.getUTCFullYear(),
+    date.getUTCMonth(),
+    date.getUTCDate(),
+    0,
+    0,
+    0,
+    0,
+  ));
+  const end = new Date(start.getTime() + 24 * 60 * 60 * 1000);
+  return { start, end };
+}
+
+async function validateAgainstMerchantLimits(sellerId: string, amountMxn: number) {
+  const merchantConfig = await db.getOne(
+    `SELECT user_id, min_trade_mxn, max_trade_mxn, daily_cap_mxn
+     FROM merchant_configs
+     WHERE user_id = $1`,
+    [sellerId],
+  );
+
+  const minTrade = merchantConfig?.min_trade_mxn ?? 100;
+  const maxTrade = merchantConfig?.max_trade_mxn ?? 50000;
+  const dailyCap = merchantConfig?.daily_cap_mxn ?? 250000;
+
+  if (amountMxn < minTrade || amountMxn > maxTrade) {
+    throw new MerchantLimitError(
+      `Trade amount must be between merchant limits: ${minTrade} and ${maxTrade} MXN`,
+    );
+  }
+
+  const { start, end } = getUtcDayRange();
+  const todayTrades = await db.getMany<{ amount_mxn: number }>(
+    `SELECT amount_mxn
+     FROM trades
+     WHERE seller_id = $1
+       AND created_at >= $2
+       AND created_at < $3
+       AND status IN ('pending', 'locked', 'revealing', 'completed')`,
+    [sellerId, start.toISOString(), end.toISOString()],
+  );
+
+  const todayVolume = todayTrades.reduce((sum, t) => sum + Number(t.amount_mxn || 0), 0);
+  const projectedVolume = todayVolume + amountMxn;
+
+  if (projectedVolume > dailyCap) {
+    throw new MerchantLimitError(
+      `Daily merchant cap exceeded (${projectedVolume}/${dailyCap} MXN). ${DAILY_CAP_RESET_NOTE}`,
+    );
+  }
+}
+
 export interface CreateTradeInput {
+  request: FastifyRequest;
   sellerId: string;
   buyerId: string;
   amountMxn: number;
 }
 
 export async function createTrade(input: CreateTradeInput) {
-  const { sellerId, buyerId, amountMxn } = input;
+  const { request, sellerId, buyerId, amountMxn } = input;
+  request.log.info({ seller_id: sellerId, buyer_id: buyerId, amount_mxn: amountMxn, category: 'trade.lifecycle' }, '[trade] Creating trade');
 
   if (amountMxn < 100 || amountMxn > 50000) {
     throw new BadRequestError('amount_mxn must be between 100 and 50,000');
@@ -78,6 +136,8 @@ export async function createTrade(input: CreateTradeInput) {
   if (!buyer) throw new NotFoundError('Buyer not found');
 
   if (sellerId === buyerId) throw new BadRequestError('Cannot trade with yourself');
+
+  await validateAgainstMerchantLimits(sellerId, amountMxn);
 
   // Generate HTLC secret
   const { secret, secretHash } = generateTradeSecret();
@@ -148,22 +208,54 @@ export async function getActiveTrades(userId: string) {
   );
 }
 
-export async function getTradeHistory(userId: string) {
-  return db.getMany(
+export async function getTradeHistory(userId: string, status?: string, page = 1, limit = 20) {
+  const trades = await db.getMany(
     `SELECT id, status, amount_mxn, platform_fee_mxn, lock_tx_hash, release_tx_hash,
-            created_at, completed_at, seller_id, buyer_id
+            created_at, completed_at, seller_id, buyer_id, expires_at
      FROM trades
      WHERE (seller_id = $1 OR buyer_id = $1)
-     ORDER BY created_at DESC
-     LIMIT 20`,
+     ORDER BY created_at DESC`,
     [userId],
   );
+
+  let filtered = trades;
+  const now = new Date();
+
+  if (status && status !== 'all') {
+    if (status === 'expired') {
+      filtered = trades.filter(t =>
+        !['completed', 'cancelled'].includes(t.status) &&
+        new Date(t.expires_at) < now
+      );
+    } else {
+      filtered = trades.filter(t => t.status === status);
+    }
+  }
+
+  // Fetch usernames to provide merchant info
+  const allUsers = await db.getMany('SELECT id, username FROM users');
+  const userMap = Object.fromEntries(allUsers.map(u => [u.id, u.username]));
+
+  const mapped = filtered.map(t => {
+    const isBuyer = t.buyer_id === userId;
+    const otherPartyId = isBuyer ? t.seller_id : t.buyer_id;
+    return {
+      ...t,
+      direction: isBuyer ? 'cash-in' : 'cash-out',
+      merchant_username: userMap[otherPartyId] || 'Usuario Micopay',
+    };
+  });
+
+  const offset = (page - 1) * limit;
+  return mapped.slice(offset, offset + limit);
 }
 
 export async function lockTrade(
+  request: FastifyRequest,
   tradeId: string,
   userId: string,
 ) {
+  request.log.info({ trade_id: tradeId, user_id: userId, category: 'trade.lifecycle' }, '[trade] Locking trade');
   let fromState = UNKNOWN_STATE;
 
   try {
@@ -184,6 +276,7 @@ export async function lockTrade(
     if (!config.mockStellar) {
       // Real on-chain lock via Soroban
       const result = await callLockOnChain({
+        request,
         buyerStellarAddress: buyer.stellar_address,
         amountStroops: BigInt(trade.amount_stroops),
         platformFeeMxn: trade.platform_fee_mxn,
@@ -194,6 +287,7 @@ export async function lockTrade(
     } else {
       // Mock mode — generate placeholder hashes
       const verified = await verifyLockOnChain(
+        request,
         `mock_${Date.now()}`,
         trade.seller_id,
         BigInt(trade.amount_stroops),
@@ -202,6 +296,8 @@ export async function lockTrade(
       lockTxHash = `mock_${Date.now()}`;
       stellarTradeId = lockTxHash;
     }
+
+    await assertNotReplayed(lockTxHash, 'trade/lock', userId);
 
     await db.execute(
       `UPDATE trades
@@ -237,7 +333,8 @@ export async function lockTrade(
   }
 }
 
-export async function revealTrade(tradeId: string, userId: string) {
+export async function revealTrade(request: FastifyRequest, tradeId: string, userId: string) {
+  request.log.info({ trade_id: tradeId, user_id: userId, category: 'trade.lifecycle' }, '[trade] Revealing trade');
   let fromState = UNKNOWN_STATE;
 
   try {
@@ -275,7 +372,8 @@ export async function revealTrade(tradeId: string, userId: string) {
   }
 }
 
-export async function getTradeSecret(tradeId: string, userId: string, ip: string, userAgent: string) {
+export async function getTradeSecret(request: FastifyRequest, tradeId: string, userId: string, ip: string, userAgent: string) {
+  request.log.info({ trade_id: tradeId, user_id: userId, category: 'trade.lifecycle' }, '[trade] Secret accessed');
   const trade = await db.getOne('SELECT * FROM trades WHERE id = $1', [tradeId]);
   if (!trade) throw new NotFoundError('Trade not found');
 
@@ -309,7 +407,8 @@ export async function getTradeSecret(tradeId: string, userId: string, ip: string
   return { secret, qr_payload: qrPayload, expires_in: 120 };
 }
 
-export async function completeTrade(tradeId: string, userId: string) {
+export async function completeTrade(request: FastifyRequest, tradeId: string, userId: string) {
+  request.log.info({ trade_id: tradeId, user_id: userId, category: 'trade.lifecycle' }, '[trade] Completing trade');
   let fromState = UNKNOWN_STATE;
 
   try {
@@ -333,11 +432,13 @@ export async function completeTrade(tradeId: string, userId: string) {
       const tradeIdBytes = createHash('sha256').update(secretHashBytes).digest();
       const secretBytes = Buffer.from(secret, 'hex');
 
-      const result = await callReleaseOnChain({ tradeIdBytes, secretBytes });
+      const result = await callReleaseOnChain({ request, tradeIdBytes, secretBytes });
       releaseTxHash = result.txHash;
     } else {
       releaseTxHash = `mock_release_${Date.now()}`;
     }
+
+    await assertNotReplayed(releaseTxHash, 'trade/complete', userId);
 
     // Clear encrypted secret from DB now that release is confirmed on-chain
     await db.execute(
