@@ -1,5 +1,26 @@
 import { config } from '../config.js';
 import type { FastifyRequest } from 'fastify';
+import db from '../db/schema.js';
+import { ReplayError } from '../utils/errors.js';
+
+export async function assertNotReplayed(
+  txHash: string,
+  route: string,
+  userId: string,
+): Promise<void> {
+  const inserted = await db.insertUnique(
+    `INSERT INTO processed_tx (tx_hash, source_route, user_id, processed_at)
+     VALUES ($1, $2, $3, NOW())
+     RETURNING tx_hash`,
+    [txHash, route, userId],
+    'tx_hash',
+  );
+
+  if (inserted === null) {
+    throw new ReplayError(txHash, route);
+  }
+}
+
 
 const STROOPS_PER_MXN = 10_000_000n;
 const DEFAULT_TIMEOUT_MINUTES = 120;
@@ -89,7 +110,11 @@ export async function callLockOnChain(params: {
           params.request.log.info({ tx_hash: txHash, category: 'stellar.tx' }, '[Stellar] Lock confirmed');
           return { txHash };
         }
-        throw new Error(`Lock transaction failed on-chain: ${txHash}`);
+        throw new UpstreamError(
+          'STELLAR_TRANSACTION_FAILED',
+          'La transacción de bloqueo falló en la blockchain.',
+          `Lock transaction failed on-chain: ${txHash}`
+        );
       }
       // 404 = still pending
     } catch (err: any) {
@@ -98,7 +123,11 @@ export async function callLockOnChain(params: {
     }
   }
 
-  throw new Error(`Lock tx ${txHash} not confirmed within 30s`);
+  throw new UpstreamError(
+    'STELLAR_TIMEOUT',
+    'La transacción de bloqueo está tardando más de lo esperado.',
+    `Lock tx ${txHash} not confirmed within 30s`
+  );
 }
 
 /**
@@ -169,14 +198,22 @@ export async function callReleaseOnChain(params: {
           params.request.log.info({ tx_hash: txHash, category: 'stellar.tx' }, '[Stellar] Release confirmed');
           return { txHash };
         }
-        throw new Error(`Release transaction failed on-chain: ${txHash}`);
+        throw new UpstreamError(
+          'STELLAR_RELEASE_FAILED',
+          'La transacción de liberación falló en la blockchain.',
+          `Release transaction failed on-chain: ${txHash}`
+        );
       }
     } catch (err: any) {
       if (err.message.includes('failed on-chain')) throw err;
     }
   }
 
-  throw new Error(`Release tx ${txHash} not confirmed within 30s`);
+  throw new UpstreamError(
+    'STELLAR_RELEASE_TIMEOUT',
+    'La transacción de liberación está tardando más de lo esperado.',
+    `Release tx ${txHash} not confirmed within 30s`
+  );
 }
 
 /**
