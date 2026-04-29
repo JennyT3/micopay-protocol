@@ -160,3 +160,8 @@ export async function getMerchants(): Promise<MerchantData[]> {
   const res = await http.get("/merchants");
   return res.data;
 }
+
+export async function demoLogin(): Promise<UserData> {
+  const res = await http.post("/auth/demo-login", {});
+  return { ...res.data.user, token: res.data.token };
+}
