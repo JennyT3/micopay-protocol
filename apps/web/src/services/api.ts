@@ -117,6 +117,50 @@ export async function getAccountBalance(): Promise<{
   return res.data;
 }
 
+export interface MerchantRegistrationPayload {
+  display_name: string;
+  latitude: number;
+  longitude: number;
+  address_text: string;
+  hours_open: string;
+  hours_close: string;
+  base_rate: number;
+  spread_percent: number;
+  min_amount: number;
+  max_amount: number;
+}
+
+export interface MerchantData {
+  id: string;
+  display_name: string;
+  latitude: number;
+  longitude: number;
+  address_text: string;
+  hours_open: string;
+  hours_close: string;
+  base_rate: number;
+  spread_percent: number;
+  min_amount: number;
+  max_amount: number;
+}
+
+export async function registerMerchant(
+  payload: MerchantRegistrationPayload,
+  token: string,
+): Promise<any> {
+  const res = await http.post(
+    "/merchants/register",
+    payload,
+    authHeaders(token),
+  );
+  return res.data;
+}
+
+export async function getMerchants(): Promise<MerchantData[]> {
+  const res = await http.get("/merchants");
+  return res.data;
+}
+
 export async function demoLogin(): Promise<UserData> {
   const res = await http.post("/auth/demo-login", {});
   return { ...res.data.user, token: res.data.token };
