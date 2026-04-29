@@ -1,12 +1,13 @@
+/**
+ * Issue #31 — shown when `merchant_unavailable` is true on the polled trade payload.
+ * "Cancel and re-match" is distinct from the general cancel flow (#20) which lands on `TradeCancelled`.
+ */
 interface MerchantUnavailableBannerProps {
   onWait: () => void;
   onCancelRematch: () => void;
   cancelLoading?: boolean;
 }
 
-/**
- * Shown when the matched merchant is offline or paused during an active trade (#31).
- */
 export default function MerchantUnavailableBanner({
   onWait,
   onCancelRematch,
